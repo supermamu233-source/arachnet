@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import { CreateProductDialog } from "./_components/create-product-dialog";
 
 export default async function ProductsPage() {
@@ -32,7 +33,12 @@ export default async function ProductsPage() {
           <h1 className="text-2xl font-semibold text-foreground">Productos</h1>
           <p className="text-sm text-muted-foreground">Catálogo de productos de la organización.</p>
         </div>
-        <CreateProductDialog />
+        <div className="flex gap-2">
+          <Button variant="outline" render={<Link href="/products/new" />}>
+            Alta física (asistente)
+          </Button>
+          <CreateProductDialog />
+        </div>
       </div>
 
       <Tabs defaultValue="existing">
@@ -87,8 +93,7 @@ export default async function ProductsPage() {
           <Card>
             <CardContent>
               <p className="mb-3 text-sm text-muted-foreground">
-                Productos detectados físicamente en el almacén, pendientes de revisión y aprobación. El flujo
-                completo de alta se implementará en una fase posterior.
+                Productos detectados físicamente en el almacén, pendientes de revisión y aprobación.
               </p>
               <Table>
                 <TableHeader>
@@ -110,7 +115,11 @@ export default async function ProductsPage() {
                   )}
                   {pendingIntakes.map((intake) => (
                     <TableRow key={intake.id}>
-                      <TableCell>{intake.normalizedEan ?? intake.rawEan ?? "—"}</TableCell>
+                      <TableCell>
+                        <Link href={`/products/intakes/${intake.id}`} className="font-medium text-foreground hover:underline">
+                          {intake.normalizedEan ?? intake.rawEan ?? "—"}
+                        </Link>
+                      </TableCell>
                       <TableCell>{intake.normalizedSku ?? intake.rawSku ?? "—"}</TableCell>
                       <TableCell>{intake.location.code} · {intake.location.name}</TableCell>
                       <TableCell>{intake.physicalQuantity}</TableCell>
