@@ -1,0 +1,794 @@
+// Arachnet — physical-inventory verification and reconciliation platform.
+// See docs/data-model.md for the narrative description of this schema.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Auth & tenancy
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  timezone  String   @default("Australia/Sydney")
+  locale    String   @default("es")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships       Membership[]
+  warehouses        Warehouse[]
+  products          Product[]
+  productBarcodes   ProductBarcode[]
+  locations         Location[]
+  inventorySources  InventorySource[]
+  expectedBalances  ExpectedStockBalance[]
+  countSessions     InventoryCountSession[]
+  counts            InventoryCount[]
+  evidenceAssets    EvidenceAsset[]
+  productIntakes    ProductIntake[]
+  robotDevices      RobotDevice[]
+  robotObservations RobotObservation[]
+  discrepancies     InventoryDiscrepancy[]
+  importJobs        ImportJob[]
+  exportJobs        ExportJob[]
+  auditLogs         AuditLog[]
+  invitations       Invitation[]
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MANAGER
+  COUNTER
+  VIEWER
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  name          String
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  memberships    Membership[]
+  sessions       Session[]
+  accounts       Account[]
+  createdCounts  InventoryCount[]       @relation("CountCreatedBy")
+  createdIntakes ProductIntake[]        @relation("IntakeCreatedBy")
+  decidedIntakes ProductIntake[]        @relation("IntakeDecidedBy")
+  createdAssets  EvidenceAsset[]        @relation("AssetCreatedBy")
+  resolvedDiscrepancies InventoryDiscrepancy[] @relation("DiscrepancyResolvedBy")
+  createdImportJobs ImportJob[]         @relation("ImportCreatedBy")
+  createdExportJobs ExportJob[]         @relation("ExportCreatedBy")
+  auditLogs      AuditLog[]             @relation("AuditActorUser")
+  sentInvitations Invitation[]          @relation("InvitationInvitedBy")
+}
+
+// better-auth database-session tables (self-hostable, Prisma adapter).
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String
+  accountId             String
+  providerId            String
+  password              String?
+  accessToken           String?
+  refreshToken          String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([identifier])
+}
+
+model Membership {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  role           Role
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+model Invitation {
+  id             String           @id @default(cuid())
+  organizationId String
+  email          String
+  role           Role
+  status         InvitationStatus @default(PENDING)
+  token          String           @unique
+  invitedById    String
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime         @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("InvitationInvitedBy", fields: [invitedById], references: [id])
+
+  @@index([organizationId])
+  @@index([email])
+}
+
+// ---------------------------------------------------------------------------
+// Warehouses & locations
+// ---------------------------------------------------------------------------
+
+model Warehouse {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  code           String
+  address        String?
+  timezone       String   @default("Australia/Sydney")
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization      Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  locations         Location[]
+  countSessions     InventoryCountSession[]
+  counts            InventoryCount[]
+  expectedBalances  ExpectedStockBalance[]
+  robotDevices      RobotDevice[]
+  discrepancies     InventoryDiscrepancy[]
+
+  @@unique([organizationId, code])
+}
+
+enum LocationType {
+  WAREHOUSE
+  ZONE
+  AISLE
+  RACK
+  LEVEL
+  BIN
+}
+
+model Location {
+  id             String       @id @default(cuid())
+  organizationId String
+  warehouseId    String
+  parentId       String?
+  code           String
+  name           String
+  type           LocationType
+  zone           String?
+  aisle          String?
+  rack           String?
+  level          String?
+  bin            String?
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  warehouse    Warehouse    @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  parent       Location?    @relation("LocationHierarchy", fields: [parentId], references: [id])
+  children     Location[]   @relation("LocationHierarchy")
+
+  productLocations  ProductLocation[]
+  expectedBalances  ExpectedStockBalance[]
+  counts            InventoryCount[]
+  robotObservations RobotObservation[]
+  discrepancies     InventoryDiscrepancy[]
+  productIntakes    ProductIntake[]
+
+  @@unique([warehouseId, code])
+  @@index([organizationId])
+  @@index([parentId])
+}
+
+// ---------------------------------------------------------------------------
+// Product catalogue
+// ---------------------------------------------------------------------------
+
+model Product {
+  id                 String    @id @default(cuid())
+  organizationId     String
+  sku                String
+  name               String
+  category           String?
+  brand              String?
+  variant            String?
+  description        String?
+  defaultUnitsPerBox Int       @default(1)
+  active             Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  archivedAt         DateTime?
+
+  organization      Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  barcodes          ProductBarcode[]
+  packagingRules    PackagingRule[]
+  productLocations  ProductLocation[]
+  expectedBalances  ExpectedStockBalance[]
+  counts            InventoryCount[]
+  productIntakes    ProductIntake[]
+  robotObservations RobotObservation[]
+  discrepancies     InventoryDiscrepancy[]
+
+  @@unique([organizationId, sku])
+  @@index([organizationId, name])
+  @@index([organizationId, category])
+  @@index([organizationId, brand])
+}
+
+enum BarcodeType {
+  EAN13
+  EAN8
+  UPC_A
+  CODE128
+  OTHER
+}
+
+model ProductBarcode {
+  id             String      @id @default(cuid())
+  organizationId String
+  productId      String
+  value          String
+  type           BarcodeType @default(EAN13)
+  isPrimary      Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, value])
+  @@index([productId])
+}
+
+model PackagingRule {
+  id             String    @id @default(cuid())
+  productId      String
+  name           String
+  packageType    String
+  unitsContained Int
+  barcode        String?
+  width          Float?
+  height         Float?
+  depth          Float?
+  weight         Float?
+  validFrom      DateTime  @default(now())
+  validTo        DateTime?
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+model ProductLocation {
+  productId       String
+  locationId      String
+  isPrimary       Boolean @default(false)
+  minimumQuantity Int?
+  maximumQuantity Int?
+
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([productId, locationId])
+  @@index([locationId])
+}
+
+// ---------------------------------------------------------------------------
+// Expected stock (source of "should exist")
+// ---------------------------------------------------------------------------
+
+enum InventorySourceType {
+  MANUAL
+  CSV
+  XLSX
+  ERP
+  POS
+  ECOMMERCE
+  PURCHASING
+  ROBOT
+}
+
+model InventorySource {
+  id             String              @id @default(cuid())
+  organizationId String
+  type           InventorySourceType
+  name           String
+  active         Boolean             @default(true)
+  config         Json?
+  createdAt      DateTime            @default(now())
+
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  expectedBalances ExpectedStockBalance[]
+
+  @@unique([organizationId, name])
+}
+
+model ExpectedStockBalance {
+  id              String   @id @default(cuid())
+  organizationId  String
+  warehouseId     String
+  productId       String
+  locationId      String
+  sourceId        String
+  quantity        Int
+  sourceReference String?
+  sourceUpdatedAt DateTime
+  importJobId     String?
+  createdAt       DateTime @default(now())
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  warehouse    Warehouse        @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  product      Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  location     Location         @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  source       InventorySource  @relation(fields: [sourceId], references: [id])
+  importJob    ImportJob?       @relation(fields: [importJobId], references: [id])
+
+  // The authoritative expected balance for a product-location pair is the row
+  // with the most recent sourceUpdatedAt; see domain/reconciliation.
+  @@index([organizationId, productId, locationId])
+  @@index([warehouseId])
+}
+
+// ---------------------------------------------------------------------------
+// Physical counts
+// ---------------------------------------------------------------------------
+
+enum CountSessionType {
+  FULL
+  CYCLE
+  SPOT
+}
+
+enum CountSessionStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
+model InventoryCountSession {
+  id             String              @id @default(cuid())
+  organizationId String
+  warehouseId    String
+  name           String
+  type           CountSessionType    @default(CYCLE)
+  status         CountSessionStatus  @default(OPEN)
+  startedAt      DateTime            @default(now())
+  completedAt    DateTime?
+  createdById    String
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  warehouse    Warehouse        @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  counts       InventoryCount[]
+
+  @@index([organizationId, warehouseId])
+}
+
+enum InventoryCountStatus {
+  COMMITTED
+  VOIDED
+}
+
+model InventoryCount {
+  id             String                @id @default(cuid())
+  organizationId String
+  warehouseId    String
+  sessionId      String?
+  productId      String
+  locationId     String
+  boxes          Int
+  unitsPerBox    Int
+  looseUnits     Int
+  physicalQuantity Int
+  observation    String?
+  status         InventoryCountStatus  @default(COMMITTED)
+  capturedAt     DateTime
+  createdById    String
+  idempotencyKey String                @unique
+  requestHash    String
+  createdAt      DateTime              @default(now())
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  warehouse    Warehouse              @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  session      InventoryCountSession? @relation(fields: [sessionId], references: [id])
+  product      Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
+  location     Location               @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  createdBy    User                   @relation("CountCreatedBy", fields: [createdById], references: [id])
+  evidence     EvidenceAsset[]        @relation("CountEvidence")
+  discrepancies InventoryDiscrepancy[] @relation("DiscrepancyLatestCount")
+
+  @@index([organizationId, productId, locationId])
+  @@index([warehouseId])
+}
+
+// ---------------------------------------------------------------------------
+// Evidence
+// ---------------------------------------------------------------------------
+
+enum EvidencePurpose {
+  PRODUCT_IMAGE
+  LABEL_IMAGE
+  COUNT_IMAGE
+  SHELF_IMAGE
+  BARCODE_CROP
+  ROBOT_IMAGE
+}
+
+enum EvidenceStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  DELETED
+}
+
+model EvidenceAsset {
+  id             String         @id @default(cuid())
+  organizationId String
+  objectKey      String         @unique
+  purpose        EvidencePurpose
+  contentType    String
+  expectedBytes  Int?
+  actualBytes    Int?
+  sha256         String?
+  width          Int?
+  height         Int?
+  depthMeta      Json?
+  status         EvidenceStatus @default(PENDING)
+  createdById    String?
+  createdAt      DateTime       @default(now())
+  verifiedAt     DateTime?
+  deletedAt      DateTime?
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?             @relation("AssetCreatedBy", fields: [createdById], references: [id])
+  counts       InventoryCount[]  @relation("CountEvidence")
+  intakes      ProductIntake[]   @relation("IntakeProductImage")
+  intakeLabels ProductIntake[]   @relation("IntakeLabelImage")
+  robotObservations RobotObservation[] @relation("RobotObservationEvidence")
+
+  @@index([organizationId, purpose])
+}
+
+// ---------------------------------------------------------------------------
+// Product intake (unapproved products found physically)
+// ---------------------------------------------------------------------------
+
+enum ProductIntakeStatus {
+  DRAFT
+  READY_FOR_REVIEW
+  MATCHED_EXISTING
+  APPROVED
+  REJECTED
+  CONFLICT
+}
+
+enum CaptureMethod {
+  BARCODE_SCANNER
+  OCR
+  MANUAL
+}
+
+model ProductIntake {
+  id                String              @id @default(cuid())
+  organizationId    String
+  locationId        String
+  rawEan            String?
+  normalizedEan     String?
+  eanCaptureMethod  CaptureMethod?
+  rawSku            String?
+  normalizedSku     String?
+  skuCaptureMethod  CaptureMethod?
+  productImageId    String?
+  labelImageId      String?
+  boxes             Int
+  unitsPerBox       Int
+  looseUnits        Int
+  physicalQuantity  Int
+  candidateProductId String?
+  status            ProductIntakeStatus @default(DRAFT)
+  createdById       String
+  decidedById       String?
+  decidedAt         DateTime?
+  decisionNotes     String?
+  approvedProductId String?
+  idempotencyKey    String              @unique
+  requestHash       String
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  location        Location        @relation(fields: [locationId], references: [id])
+  productImage    EvidenceAsset?  @relation("IntakeProductImage", fields: [productImageId], references: [id])
+  labelImage      EvidenceAsset?  @relation("IntakeLabelImage", fields: [labelImageId], references: [id])
+  candidateProduct Product?       @relation(fields: [candidateProductId], references: [id])
+  createdBy       User            @relation("IntakeCreatedBy", fields: [createdById], references: [id])
+  decidedBy       User?           @relation("IntakeDecidedBy", fields: [decidedById], references: [id])
+
+  @@index([organizationId, status])
+  @@index([locationId])
+}
+
+// ---------------------------------------------------------------------------
+// Robots
+// ---------------------------------------------------------------------------
+
+enum RobotDeviceStatus {
+  ACTIVE
+  DISABLED
+}
+
+model RobotDevice {
+  id              String            @id @default(cuid())
+  organizationId  String
+  warehouseId     String
+  code            String
+  name            String
+  secretHash      String
+  status          RobotDeviceStatus @default(ACTIVE)
+  lastSeenAt      DateTime?
+  firmwareVersion String?
+  createdAt       DateTime          @default(now())
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  warehouse    Warehouse          @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  observations RobotObservation[]
+
+  @@unique([organizationId, code])
+}
+
+enum RobotObservationStatus {
+  ACCEPTED
+  REVIEW_REQUIRED
+  REJECTED
+}
+
+enum ConfidenceLevel {
+  HIGH
+  MEDIUM
+  LOW
+  REVIEW_REQUIRED
+}
+
+model RobotObservation {
+  id               String                  @id @default(cuid())
+  organizationId   String
+  robotId          String
+  eventId          String
+  requestHash      String
+  productId        String?
+  locationId       String
+  barcodeObserved  String?
+  boxes            Int
+  unitsPerBox      Int
+  looseUnits       Int
+  observedQuantity Int
+  expectedQuantity Int?
+  difference       Int?
+  confidenceRaw    Float?
+  confidenceLevel  ConfidenceLevel
+  status           RobotObservationStatus
+  capturedAt       DateTime
+  receivedAt       DateTime                @default(now())
+  rawPayload       Json
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  robot        RobotDevice     @relation(fields: [robotId], references: [id], onDelete: Cascade)
+  product      Product?        @relation(fields: [productId], references: [id])
+  location     Location        @relation(fields: [locationId], references: [id])
+  evidence     EvidenceAsset[] @relation("RobotObservationEvidence")
+  discrepancies InventoryDiscrepancy[] @relation("DiscrepancyLatestRobotObservation")
+
+  @@unique([robotId, eventId])
+  @@index([organizationId, productId, locationId])
+}
+
+// ---------------------------------------------------------------------------
+// Reconciliation
+// ---------------------------------------------------------------------------
+
+enum DiscrepancyStatus {
+  MATCH
+  SHORTAGE
+  SURPLUS
+  EXPECTED_MISSING
+  PHYSICAL_UNVERIFIED
+  REVIEW_REQUIRED
+  RESOLVED
+  DISMISSED
+}
+
+enum DiscrepancySeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model InventoryDiscrepancy {
+  id                    String              @id @default(cuid())
+  organizationId        String
+  warehouseId            String
+  productId              String
+  locationId             String
+  latestCountId          String?
+  latestRobotObservationId String?
+  expectedQuantity       Int?
+  observedQuantity       Int?
+  difference             Int?
+  severity               DiscrepancySeverity?
+  status                 DiscrepancyStatus
+  firstSeenAt            DateTime            @default(now())
+  lastSeenAt             DateTime            @default(now())
+  resolvedAt             DateTime?
+  resolvedById           String?
+  resolutionNotes        String?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  warehouse    Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  product      Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  location     Location          @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  latestCount  InventoryCount?   @relation("DiscrepancyLatestCount", fields: [latestCountId], references: [id])
+  latestRobotObservation RobotObservation? @relation("DiscrepancyLatestRobotObservation", fields: [latestRobotObservationId], references: [id])
+  resolvedBy   User?             @relation("DiscrepancyResolvedBy", fields: [resolvedById], references: [id])
+  resolutions  DiscrepancyResolutionEvent[]
+
+  @@unique([organizationId, productId, locationId])
+  @@index([organizationId, status])
+  @@index([warehouseId])
+}
+
+// Append-only resolution history, retained even after the discrepancy is reopened.
+model DiscrepancyResolutionEvent {
+  id            String   @id @default(cuid())
+  discrepancyId String
+  action        String
+  notes         String?
+  actorUserId   String?
+  createdAt     DateTime @default(now())
+
+  discrepancy InventoryDiscrepancy @relation(fields: [discrepancyId], references: [id], onDelete: Cascade)
+
+  @@index([discrepancyId])
+}
+
+// ---------------------------------------------------------------------------
+// Imports & exports
+// ---------------------------------------------------------------------------
+
+enum ImportType {
+  CSV
+  XLSX
+  GENERIC_REST
+  MANUAL
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model ImportJob {
+  id                    String     @id @default(cuid())
+  organizationId        String
+  type                  ImportType
+  status                JobStatus  @default(PENDING)
+  objectKey             String?
+  idempotencyKey        String     @unique
+  requestHash           String
+  rowsTotal             Int?
+  rowsAccepted          Int?
+  rowsRejected          Int?
+  errorReportObjectKey  String?
+  createdById           String
+  createdAt             DateTime   @default(now())
+  completedAt           DateTime?
+
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy        User                   @relation("ImportCreatedBy", fields: [createdById], references: [id])
+  expectedBalances ExpectedStockBalance[]
+
+  @@index([organizationId, status])
+}
+
+model ExportJob {
+  id                String    @id @default(cuid())
+  organizationId    String
+  filterSnapshot    Json
+  snapshotAt        DateTime  @default(now())
+  status            JobStatus @default(PENDING)
+  resultObjectKey   String?
+  idempotencyKey    String    @unique
+  requestHash       String
+  createdById       String
+  createdAt         DateTime  @default(now())
+  completedAt       DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("ExportCreatedBy", fields: [createdById], references: [id])
+
+  @@index([organizationId, status])
+}
+
+// ---------------------------------------------------------------------------
+// Audit log (append-only)
+// ---------------------------------------------------------------------------
+
+enum AuditActorType {
+  USER
+  ROBOT
+  SYSTEM
+}
+
+model AuditLog {
+  id             String         @id @default(cuid())
+  organizationId String
+  actorType      AuditActorType
+  actorUserId    String?
+  actorRobotId   String?
+  action         String
+  entityType     String
+  entityId       String
+  oldValue       Json?
+  newValue       Json?
+  requestId      String?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime       @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actorUser    User?        @relation("AuditActorUser", fields: [actorUserId], references: [id])
+
+  @@index([organizationId, entityType, entityId])
+  @@index([organizationId, createdAt])
+}
