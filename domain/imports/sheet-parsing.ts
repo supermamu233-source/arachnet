@@ -69,13 +69,18 @@ const rawRowSchema = z.object({
   locationCode: z.string().trim().min(1, "código de ubicación vacío"),
   // Coerced explicitly (rather than via z.coerce.number(), which would turn
   // a missing/null value into 0 instead of rejecting it) so a blank
-  // quantity cell is always a rejection, never a silent zero.
+  // quantity cell is always a rejection, never a silent zero. Converts a
+  // missing/blank/non-numeric cell to `undefined` (not NaN) before it
+  // reaches z.number() — NaN fails z.number()'s own built-in type check
+  // first, before any .refine() runs, which would otherwise bury our
+  // Spanish message behind Zod's generic English "expected number, received
+  // NaN" one.
   quantity: z
     .preprocess((val) => {
-      if (val === null || val === undefined || val === "") return Number.NaN;
-      return typeof val === "number" ? val : Number(val);
-    }, z.number())
-    .refine((val) => !Number.isNaN(val), { message: "cantidad ausente o no numérica" })
+      if (val === null || val === undefined || val === "") return undefined;
+      const num = typeof val === "number" ? val : Number(val);
+      return Number.isNaN(num) ? undefined : num;
+    }, z.number({ error: "cantidad ausente o no numérica" }))
     .refine((val) => Number.isInteger(val), { message: "cantidad debe ser un entero" })
     .refine((val) => val >= 0, { message: "cantidad no puede ser negativa" }),
   sourceTimestamp: z.string().trim().min(1),
