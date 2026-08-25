@@ -21,12 +21,14 @@ const COUNT_INCLUDE = {
   product: true,
   location: true,
   evidence: true,
+  createdBy: { select: { id: true, name: true } },
 } as const;
 
 export type CountWithRelations = InventoryCount & {
   product: NonNullable<Awaited<ReturnType<typeof prisma.product.findUnique>>>;
   location: NonNullable<Awaited<ReturnType<typeof prisma.location.findUnique>>>;
   evidence: Awaited<ReturnType<typeof prisma.evidenceAsset.findMany>>;
+  createdBy: { id: string; name: string };
 };
 
 export interface CreateCountSessionParams {
