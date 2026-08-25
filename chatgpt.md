@@ -162,8 +162,68 @@ Known limitations at this checkpoint: no physical-count UI/offline queue yet
 (Phase 4), no product-intake wizard yet (Phase 5), no CSV/XLSX import or
 Excel export yet (Phase 6b/8), no Playwright E2E tests yet (Phase 10 gate).
 
-Exact next action: merge Phase 7 (robot) once its subagent finishes, then
-build Phases 4/5/6b/8 (counts+offline queue, product intake, imports,
-exports) — likely via further parallel subagents on disjoint files, same
-pattern as this session — then Playwright E2E covering the full demo
-workflow, then final Phase 9/10 hardening pass and the required final report.
+### 2026-08-25 (continued) — Phases 4/5/6b/7/8 complete; MVP feature-complete
+
+Three more subagents were launched in parallel (counts+offline queue,
+product intake, imports/exports) alongside the still-running robot agent.
+All three were **terminated mid-task by the platform's account-wide session
+usage limit** (not a bug in their work) after making substantial progress —
+robots finished cleanly first. Rather than re-launch subagents (same limit
+would likely recur), the primary session inspected each partial file set
+directly, confirmed everything present compiled/passed, and finished the
+remaining gaps itself:
+
+- **Verified and merged** the interrupted agents' completed backend work:
+  `server/services/counts.ts` + `/api/count-sessions` + `/api/counts`,
+  `lib/offline-queue.ts` (Dexie/IndexedDB state machine) + `lib/client-hashing.ts`,
+  `server/services/intakes.ts` + `/api/product-intakes/**` + the intake
+  wizard UI, and `domain/imports/**` (the `InventorySourceAdapter` interface
+  + Manual/CSV/XLSX/GenericRest implementations) + `server/services/imports.ts`.
+- **Fixed two real bugs found while writing the missing tests**:
+  (1) an offline-queue unit test committed all 250 filler records instead of
+  one, because `syncQueuedCounts` correctly processes every eligible record
+  (test bug, not implementation); (2) `domain/imports/sheet-parsing.ts`'s
+  custom Spanish "cantidad ausente o no numérica" validation message was
+  unreachable — a `NaN` quantity failed Zod's own base type check before any
+  `.refine()` ran, leaking a generic English message into an otherwise
+  all-Spanish error report.
+- **Built directly** (Phase 4/5/6b/7/8 completion): imports API routes + UI
+  (`/imports`), the intake review/approve UI (`/products/intakes/[id]`,
+  previously unreachable from any page), the full inventory/counts UI
+  (`/inventory`, `/inventory/count` with a `BarcodeDetector`+ZXing-fallback
+  scanner component, `/inventory/sessions/[id]`), and the entire Phase 8
+  exports feature from scratch (`server/services/exports.ts` — the four-sheet
+  ExcelJS workbook, `/exports` UI, download flow).
+- **Fixed a real bug in `prisma/seed.ts`** found while manually verifying the
+  robot demo end-to-end: the robot device's `upsert` had `update: {}` (a
+  no-op), so re-running `pnpm db:seed` printed a fresh "secret — save now"
+  that was never actually persisted, making the printed secret useless on
+  any run after the first. Fixed and reverified.
+- **Fixed a Base UI accessibility warning** (`Button` rendering a `Link`
+  needs `nativeButton={false}`), caught by the Playwright E2E run's console
+  output.
+
+**Demo workflow verified live** (dev server + real Postgres/MinIO, not
+mocked): re-seeded, ran `tools/robot-simulator/simulator.py` against the
+running app with a freshly rotated robot secret, and confirmed via both the
+API and the discrepancy detail page that Arachnet shows exactly
+expected=82 / observed=74 / difference=-8 / severity=MEDIUM /
+status=SHORTAGE, with the robot's evidence and HIGH confidence visible, and
+the official expected balance never touched.
+
+**Test counts at this checkpoint**: 63 unit + 64 integration + 4 Playwright
+E2E, all passing. `pnpm typecheck` and `pnpm lint` clean repo-wide.
+`pnpm build` succeeds (73 routes).
+
+Known limitations (see final report for the full honest list): no
+background job queue (imports/exports process synchronously in-request);
+no real email delivery (invite/reset links are logged, not sent); E2E
+coverage is the catalogue-setup flow only, not the full 14-step demo script
+from section 17 (that flow was instead verified manually via API + the
+robot simulator, described above, rather than automated as Playwright
+steps); rate limiting has an integration point but nothing wired up.
+
+Exact next action: extend Playwright E2E coverage to the remaining steps
+(count submission, discrepancy resolve, product intake approval, export
+download) as a dedicated follow-up; consider a real background job runner
+for imports/exports before this goes anywhere near production file sizes.
