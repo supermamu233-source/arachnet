@@ -95,6 +95,7 @@ model Account {
   userId                String
   accountId             String
   providerId            String
+  issuer                String
   password              String?
   accessToken           String?
   refreshToken          String?

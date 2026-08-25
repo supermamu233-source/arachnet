@@ -96,6 +96,7 @@ export async function acceptInvitation(params: AcceptInvitationParams) {
         userId: createdUser.id,
         accountId: createdUser.id,
         providerId: "credential",
+        issuer: "local:credential",
         password: passwordHash,
       },
     });

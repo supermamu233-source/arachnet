@@ -6,7 +6,17 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run tests/unit",
+    "test:watch": "vitest tests/unit",
+    "test:integration": "dotenv -e .env.test -- vitest run tests/integration",
+    "test:e2e": "playwright test",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset:test": "dotenv -e .env.test -- prisma migrate deploy",
+    "robot:simulate": "python3 tools/robot-simulator/simulator.py"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1116.0",
