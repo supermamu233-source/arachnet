@@ -42,7 +42,10 @@ function displayKeyFor(objectKey: string): string {
   return `${objectKey}.display.jpg`;
 }
 
-function thumbKeyFor(objectKey: string): string {
+/** Exported so other services (e.g. server/services/exports.ts, embedding
+ * small thumbnails in the Excel export) can fetch the same derived object
+ * without duplicating this naming convention. */
+export function thumbKeyFor(objectKey: string): string {
   return `${objectKey}.thumb.jpg`;
 }
 
