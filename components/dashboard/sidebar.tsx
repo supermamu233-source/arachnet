@@ -14,6 +14,7 @@ import {
   Bot,
   Users,
   ScrollText,
+  Warehouse,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -25,6 +26,7 @@ const NAV_ITEMS = [
   { href: "/imports", label: "Importaciones", icon: Upload },
   { href: "/exports", label: "Exportaciones", icon: Download },
   { href: "/robots", label: "Robots", icon: Bot },
+  { href: "/settings/warehouses", label: "Almacenes", icon: Warehouse },
   { href: "/settings/users", label: "Usuarios", icon: Users },
   { href: "/audit", label: "Auditoría", icon: ScrollText },
 ];

@@ -11,7 +11,7 @@
     "test": "vitest run tests/unit",
     "test:watch": "vitest tests/unit",
     "test:integration": "dotenv -e .env.test -- vitest run tests/integration",
-    "test:e2e": "playwright test",
+    "test:e2e": "tsx tests/e2e/seed-e2e-user.ts && playwright test",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
