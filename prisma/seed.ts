@@ -229,7 +229,11 @@ async function main() {
   const robotSecretHash = await hashPassword(robotSecret);
   await prisma.robotDevice.upsert({
     where: { organizationId_code: { organizationId: organization.id, code: "scout-001" } },
-    update: {},
+    // Every re-run prints a freshly generated secret (see the console output
+    // below) — `update` must actually persist it, or a re-seed silently
+    // keeps whichever secret was set the very first time while claiming a
+    // new one was just saved.
+    update: { secretHash: robotSecretHash },
     create: {
       organizationId: organization.id,
       warehouseId: warehouse.id,
