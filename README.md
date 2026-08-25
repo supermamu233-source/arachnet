@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Arachnet
 
-## Getting Started
+Physical-inventory verification and reconciliation platform for irregular SME
+warehouses. PostgreSQL is the source of truth; Excel is import/export only.
+Arachnet compares **expected** inventory (ERP/POS/purchasing/imports) against
+**observed** physical inventory (human counts, robot observations) and
+surfaces the difference as a reviewable discrepancy — it never silently
+overwrites an external system.
 
-First, run the development server:
+See `docs/` for the full design (architecture, data model, API, security,
+privacy, reconciliation rules, robot protocol, testing strategy, deployment,
+operations) and `chatgpt.md` for the dated build log.
+
+## Stack
+
+Next.js 16 (App Router) · TypeScript (strict) · Tailwind CSS v4 · shadcn/ui
+(Base UI primitives) · PostgreSQL · Prisma 7 · better-auth (database
+sessions, invite-only) · Zod · React Hook Form · S3-compatible object storage
+(MinIO locally, Cloudflare R2 in production) · Sharp · ExcelJS/SheetJS ·
+Dexie (offline queue) · Vitest · Playwright.
+
+## Local setup (clean clone)
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
+
+# Local services: prefer Docker if you have it —
+docker compose up -d
+# — otherwise see docs/operations.md for the Homebrew-based equivalent this
+# build actually used (no Docker in that sandbox).
+
+cp .env.example .env
+# fill in DATABASE_URL, DIRECT_URL, AUTH_SECRET, S3_*, ROBOT_AUTH_PEPPER
+# (see docs/operations.md for concrete local values)
+
+pnpm db:migrate:deploy   # or: pnpm db:migrate (interactive, for schema changes)
+pnpm db:seed             # demo org/warehouse/products/robot/owner user —
+                         # prints a ONE-TIME temporary password, save it
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000 and sign in with the printed owner email/password.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+pnpm dev                 # start the dev server
+pnpm build                # production build
+pnpm lint                 # ESLint
+pnpm typecheck             # tsc --noEmit
+pnpm test                  # unit tests (Vitest, no external services)
+pnpm test:integration       # integration tests against real local Postgres/MinIO
+pnpm test:e2e                # Playwright end-to-end (needs `pnpm dev` running)
+pnpm db:migrate               # create + apply a new migration (dev)
+pnpm db:migrate:deploy          # apply existing migrations only (CI/prod-safe)
+pnpm db:seed                     # (re-)seed demo data, idempotent
+pnpm robot:simulate                # run the Python robot simulator
+```
 
-## Learn More
+## Repository layout
 
-To learn more about Next.js, take a look at the following resources:
+```
+app/            Route handlers (API) and pages (UI) — thin, no business logic
+domain/         Pure business rules (EAN checksum, matching, quantity calc,
+                confidence/severity classification) — unit-tested in isolation
+server/         Services (transactional logic), auth/session/RBAC, audit
+lib/            env validation, Prisma client, typed errors, idempotency,
+                hashing, logging
+storage/        Object storage abstraction (S3-compatible)
+prisma/         Schema, migrations, seed script
+tools/          Standalone tools outside the Next.js process (robot simulator)
+tests/          unit/, integration/, e2e/
+docs/           Architecture, data model, API, security, privacy,
+                reconciliation, robot protocol, testing, deployment, operations
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deployment
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Vercel + Neon (PostgreSQL) + Cloudflare R2. See `docs/deployment.md` for the
+exact steps — production deployment requires explicit human approval, and no
+cloud credentials were available while building this MVP, so those steps are
+reviewed but not yet exercised against real infrastructure.

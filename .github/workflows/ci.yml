@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: arachnet
+          POSTGRES_PASSWORD: arachnet
+          POSTGRES_DB: arachnet_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U arachnet -d arachnet_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      minio:
+        image: minio/minio:latest
+        env:
+          MINIO_ROOT_USER: arachnet_minio
+          MINIO_ROOT_PASSWORD: arachnet_minio_secret
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/live || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        # NOTE: the `minio/minio` image's default entrypoint needs a command
+        # (`server /data`) that GitHub Actions' `services:` block cannot
+        # override directly. If this job reports MinIO as unhealthy, run
+        # MinIO as a manually-started background step instead of a
+        # `services:` entry (same pattern as docs/operations.md's local
+        # setup), or switch to a MinIO GitHub Action such as
+        # `minio/setup-minio-action`. This was not validated against a real
+        # GitHub Actions run in this build (no CI credentials/runner
+        # available) — treat it as a reviewed starting point, not a proven one.
+
+    env:
+      DATABASE_URL: postgresql://arachnet:arachnet@localhost:5432/arachnet_test
+      DIRECT_URL: postgresql://arachnet:arachnet@localhost:5432/arachnet_test
+      AUTH_SECRET: ci-auth-secret-not-for-production-000000000000000
+      APP_URL: http://localhost:3000
+      S3_ENDPOINT: http://localhost:9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: arachnet_minio
+      S3_SECRET_ACCESS_KEY: arachnet_minio_secret
+      S3_BUCKET_PRIVATE: arachnet-evidence-test
+      S3_FORCE_PATH_STYLE: "true"
+      ROBOT_AUTH_PEPPER: ci-robot-pepper-not-for-production-0000000000000
+      MAX_UPLOAD_BYTES: "2097152"
+      EMAIL_PROVIDER: console
+      EMAIL_FROM: no-reply@arachnet.local
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create MinIO bucket
+        run: |
+          curl -sSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc
+          chmod +x /usr/local/bin/mc
+          mc alias set ci http://localhost:9000 arachnet_minio arachnet_minio_secret
+          mc mb --ignore-existing ci/arachnet-evidence-test
+          mc anonymous set none ci/arachnet-evidence-test
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Apply test DB migrations
+        run: npx prisma migrate deploy
+
+      - name: Integration tests
+        run: pnpm test:integration
+
+      - name: Build
+        run: pnpm build
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E smoke test
+        run: pnpm test:e2e
