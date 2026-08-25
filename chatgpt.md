@@ -116,7 +116,54 @@ Known limitations at this checkpoint:
 - Auth, evidence pipeline, domain logic, UI, imports/exports, robot protocol, tests,
   and CI are not yet built — this checkpoint is Phase 0 only.
 
-Exact next action: install shadcn/ui base components and Tailwind brand tokens,
-write `docs/*.md`, then start Phase 1 (auth/tenancy) and Phase 2 (locations/products)
-in parallel via subagents while the primary agent builds the storage/evidence
-pipeline and domain business-rule modules, per the task's phase gates.
+### 2026-08-25 — Phases 1–3, 6, 9 (auth, catalogue, evidence, reconciliation, admin)
+
+Built (mix of direct work and 3 parallel subagents on disjoint file sets,
+integrated and verified by the primary session):
+
+- **Phase 1 (auth/tenancy)**: better-auth wired to Prisma via
+  `@prisma/adapter-pg`; invite-only accounts (`server/services/invitations.ts`);
+  RBAC (`server/auth/session.ts`, `server/permissions/rbac.ts`); dashboard
+  shell with Arachnet branding. Verified end-to-end against a live dev
+  server: owner sign-in, protected routes, invitation create/accept,
+  RBAC-enforced 403. Fixed a real bug found this way: better-auth 1.7 added
+  an `Account.issuer` column not documented in older training data —
+  sign-in silently failed without it (migration
+  `20260825033905_add_account_issuer`).
+- **Phase 2 (warehouses/locations/products)**: built by a subagent —
+  services, API routes, dashboard pages, QR generation, exact-match search
+  built on `domain/products/matching.ts`. 44 unit + 34 integration tests.
+- **Phase 3 (evidence pipeline)**: built by a subagent — `storage/`
+  (S3-compatible, MinIO locally/R2 in prod), presign→upload→finalize with
+  real `sha256` + `sharp` image decode + DISPLAY/THUMB variants, signed
+  downloads only. 5 integration tests.
+- **Phase 6 reconciliation engine** (built directly): 
+  `server/services/reconciliation.ts` recomputes `InventoryDiscrepancy` per
+  product-location pair from `domain/reconciliation/*`'s pure classifiers,
+  auto-resolves on a later match (retaining history via
+  `DiscrepancyResolutionEvent`), never auto-resolves a `REVIEW_REQUIRED`
+  reading. Dashboard pages + API routes.
+- **Phase 9 admin** (built directly): user/role management (invite, change
+  role, remove), organization settings, integrations list, audit log
+  viewer.
+- Full `docs/` set (architecture, data-model, security, privacy,
+  reconciliation, testing, deployment, operations), GitHub Actions CI
+  workflow (untested against a real runner — no CI credentials available;
+  documented as reviewed-not-proven in the workflow file itself).
+
+Tests as of this checkpoint: 44/44 unit, 34/34 integration, `pnpm typecheck`
+and `pnpm lint` clean repo-wide, `pnpm build` succeeds (28 routes).
+
+Still in progress: a 4th subagent building Phase 7 (robot ingestion +
+Python simulator) — not yet merged as of this log entry, see the next entry
+or a later session for its outcome.
+
+Known limitations at this checkpoint: no physical-count UI/offline queue yet
+(Phase 4), no product-intake wizard yet (Phase 5), no CSV/XLSX import or
+Excel export yet (Phase 6b/8), no Playwright E2E tests yet (Phase 10 gate).
+
+Exact next action: merge Phase 7 (robot) once its subagent finishes, then
+build Phases 4/5/6b/8 (counts+offline queue, product intake, imports,
+exports) — likely via further parallel subagents on disjoint files, same
+pattern as this session — then Playwright E2E covering the full demo
+workflow, then final Phase 9/10 hardening pass and the required final report.
