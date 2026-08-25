@@ -34,7 +34,7 @@ export default async function ProductsPage() {
           <p className="text-sm text-muted-foreground">Catálogo de productos de la organización.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" render={<Link href="/products/new" />}>
+          <Button variant="outline" nativeButton={false} render={<Link href="/products/new" />}>
             Alta física (asistente)
           </Button>
           <CreateProductDialog />

@@ -29,7 +29,7 @@ export default async function InventoryPage() {
           <p className="text-sm text-muted-foreground">Sesiones de conteo físico de inventario.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" render={<Link href="/inventory/count" />}>
+          <Button variant="outline" nativeButton={false} render={<Link href="/inventory/count" />}>
             Contar ahora
           </Button>
           <CreateSessionDialog warehouses={warehouses} />
