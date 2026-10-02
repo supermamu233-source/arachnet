@@ -1,0 +1,16 @@
+[Unit]
+Description=Arachnet continuous barcode scanner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=smushimink
+WorkingDirectory=/home/smushimink/arachnet-robot
+EnvironmentFile=/home/smushimink/arachnet-robot/.env.robot
+ExecStart=/home/smushimink/arachnet-robot/.venv-scanner/bin/python /home/smushimink/arachnet-robot/robot_scanner.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
